@@ -1,0 +1,4 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+regex>=2023.0
+wcwidth>=0.2.13

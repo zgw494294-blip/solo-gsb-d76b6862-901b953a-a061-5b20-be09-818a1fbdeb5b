@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>字幕时轴校准台</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>🎬 字幕时轴校准台</h1>
+    <p class="tagline">导入 SRT · 设置校准锚点 · 分段线性映射 · 实时预览 · 冲突拦截 · 导出 UTF-8</p>
+  </header>
+
+  <main>
+    <!-- 1. 导入 -->
+    <section class="card" id="import-card">
+      <h2><span class="step">1</span> 导入字幕</h2>
+      <div class="import-row">
+        <label class="file-btn">
+          选择 SRT 文件
+          <input type="file" id="file-input" accept=".srt,.txt">
+        </label>
+        <button id="load-sample" class="btn secondary">载入示例</button>
+        <span id="import-status" class="status"></span>
+      </div>
+      <details class="paste-box">
+        <summary>或粘贴 SRT 文本</summary>
+        <textarea id="paste-area" rows="7" spellcheck="false"
+          placeholder="1&#10;00:00:01,000 --> 00:00:03,000&#10;字幕文本…"></textarea>
+        <button id="parse-paste" class="btn">解析粘贴内容</button>
+      </details>
+    </section>
+
+    <!-- 工作区 -->
+    <div id="workspace" class="hidden">
+      <div class="toolbar card">
+        <button id="undo-btn" class="btn secondary" disabled>↩ 撤销锚点/锁定</button>
+        <button id="export-btn" class="btn primary" disabled>⬇ 导出 SRT</button>
+        <span class="toolbar-sep"></span>
+        <button id="project-save" class="btn" title="把当前锚点/锁定/撤销栈保存为 .stc 校准工程">💾 保存工程 .stc</button>
+        <label class="btn file-btn-sm" title="先导入（或粘贴）对应的 SRT，再打开 .stc 工程">
+          📂 打开工程 .stc
+          <input type="file" id="project-input" accept=".stc,.json,application/json">
+        </label>
+        <span id="mapping-status" class="status"></span>
+        <span id="conflict-status" class="status"></span>
+      </div>
+
+      <section class="card hidden" id="project-panel">
+        <h2 id="project-panel-title"></h2>
+        <div id="project-panel-body"></div>
+      </section>
+
+      <div class="columns">
+        <!-- 2. 字幕列表 -->
+        <section class="card table-card">
+          <h2><span class="step">2</span> 字幕列表 <small>（新时间为实时预览）</small></h2>
+          <div class="table-wrap">
+            <table id="sub-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>原开始</th>
+                  <th>原结束</th>
+                  <th class="new-col">新开始</th>
+                  <th class="new-col">新结束</th>
+                  <th>文本</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="sub-tbody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <div class="side">
+          <!-- 3. 锚点 -->
+          <section class="card">
+            <h2><span class="step">3</span> 校准锚点</h2>
+            <p class="hint">在左侧字幕行点击「⚑ 锚点」添加。至少 2 个锚点后启用分段线性映射，首尾区间沿最近一段斜率外推。</p>
+            <form id="anchor-form" class="hidden">
+              <div class="form-title">为字幕 <strong id="af-sub"></strong> 设置锚点</div>
+              <label>原时间
+                <input id="af-original" type="text" placeholder="00:00:10,000">
+              </label>
+              <label>目标时间
+                <input id="af-target" type="text" placeholder="00:00:12,500">
+              </label>
+              <div class="form-actions">
+                <button type="submit" class="btn primary">添加锚点</button>
+                <button type="button" id="af-cancel" class="btn secondary">取消</button>
+              </div>
+              <div class="hint">支持格式：HH:MM:SS,mmm、MM:SS.mmm、纯秒数</div>
+            </form>
+            <ul id="anchor-list" class="anchor-list"></ul>
+          </section>
+
+          <!-- 4. 冲突 -->
+          <section class="card">
+            <h2><span class="step">4</span> 冲突检查</h2>
+            <ul id="conflict-list" class="conflict-list"></ul>
+          </section>
+        </div>
+      </div>
+
+      <!-- 5. 对白覆盖审计 -->
+      <section class="card" id="audit-card">
+        <h2><span class="step">5</span> 对白覆盖审计
+          <small>（按当前实时预览时间轴；音频仅在浏览器内用 Web Audio API 解码，不会上传）</small>
+        </h2>
+        <div class="audit-controls">
+          <label class="file-btn">
+            选择本地音频
+            <input type="file" id="audit-file"
+              accept="audio/*,.wav,.mp3,.m4a,.aac,.flac,.ogg,.oga,.opus,.webm">
+          </label>
+          <label class="audit-threshold">判定阈值（整段 RMS 峰值 × 比例）
+            <input type="range" id="audit-threshold" min="1" max="30" step="1" value="5">
+            <span id="audit-threshold-val">0.050</span>
+          </label>
+          <button id="audit-stop" class="btn secondary" disabled>⏹ 停止试听</button>
+          <button id="audit-export" class="btn" disabled>⬇ 导出审计 JSON 报告</button>
+          <span id="audit-status" class="status"></span>
+        </div>
+        <p class="hint">
+          固定参数：20ms 分窗（各声道 RMS 取最大）、桥接 &lt;120ms 静音、剔除 &lt;80ms 有声片段；
+          列出连续 ≥300ms 的「有声无字幕」与字幕区间内静音占比 ≥70% 的「疑似空挂」。
+          锚点 / 锁定 / 阈值变化后自动重算。
+        </p>
+        <div id="audit-audio-info" class="audit-audio-info">尚未导入音频。</div>
+        <canvas id="audit-canvas" width="800" height="150"></canvas>
+        <div class="audit-playing" id="audit-playing"></div>
+        <div class="audit-results">
+          <div class="audit-result-col">
+            <h3>有声无字幕（连续 ≥300ms）</h3>
+            <ul id="audit-gaps" class="audit-list"></ul>
+          </div>
+          <div class="audit-result-col">
+            <h3>疑似空挂字幕（静音 ≥70%）</h3>
+            <ul id="audit-empties" class="audit-list"></ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- 6. 字幕断行排版 -->
+      <section class="card" id="typeset-card">
+        <h2><span class="step">6</span> 字幕断行排版
+          <small>（只增删换行、或把断点处一个空白替换为换行；不改字符顺序、时间轴、锚点、锁定与 <code>.stc</code> 指纹）</small>
+        </h2>
+        <div class="ts-controls">
+          <label class="ts-param">每行列数
+            <input id="ts-columns" type="number" min="12" max="30" step="1" value="18">
+            <span class="ts-range">12～30</span>
+          </label>
+          <label class="ts-param">最多行数
+            <input id="ts-maxlines" type="number" min="1" max="3" step="1" value="2">
+            <span class="ts-range">1～3</span>
+          </label>
+          <button id="ts-generate" class="btn primary">生成排版建议</button>
+          <button id="ts-accept-all" class="btn" disabled>✔ 全部接受</button>
+          <button id="ts-undo-round" class="btn secondary" disabled>↩ 撤销本轮</button>
+          <button id="ts-export" class="btn" disabled>📐 下载排版版 SRT</button>
+          <span id="ts-status" class="status"></span>
+        </div>
+        <details class="ts-rules" open>
+          <summary>排版规则说明</summary>
+          <ul>
+            <li>用 Unicode 字素簇切分（<code>regex</code> 的 <code>\X</code>；emoji 组合、注音 / 声调组合不拆开），
+              以 <code>wcwidth.wcswidth</code> 计列宽（汉字 / 全角字符 2 列，ASCII 1 列，控制字符 0 列）。</li>
+            <li>候选断点限于<strong>空白处</strong>（该空白替换为换行、不再保留）、<strong>标点之后</strong>、<strong>相邻汉字之间</strong>；
+              正文里既有的换行可保留或删除。</li>
+            <li>断点罚分：句末标点 <code>。！？；</code> = 0，空白 = 1，其他标点 = 2，相邻汉字之间 = 3。</li>
+            <li>禁止 <code>，。！？；：、）》】」』</code> 出现在行首；禁止 <code>（《【「『</code> 留在行尾。</li>
+            <li>动态规划只接受<strong>所有行都不超宽</strong>的方案，依次最小化：
+              ① 总罚分 → ② 各行剩余列数平方和 → ③ 断点位置字典序（更靠前的断点优先）。</li>
+            <li>无解的条目会逐条列明原因（如最少需要的行数超过上限、存在切不开的超宽连续片段、
+              首尾标点固有违规、单个字素簇超宽）。</li>
+            <li>可单条接受、也可全部接受；「撤销本轮」一次恢复本轮生成建议以来的接受状态。
+              <strong>排版版 SRT</strong> 只写入已接受的换行（时间仍走当前锚点 / 锁定映射，同样做冲突拦截）；
+              第 1 步工具栏的普通「⬇ 导出 SRT」始终保持原样、不含排版换行。
+              排版状态不写入 <code>.stc</code> 工程。</li>
+          </ul>
+        </details>
+        <div id="ts-list" class="ts-list">
+          <div class="ts-empty">设置每行列数与最多行数后，点击「生成排版建议」，在此逐条对照原文与建议。</div>
+        </div>
+      </section>
+
+      <!-- 7. 双语字幕合成 -->
+      <section class="card" id="bilingual-card">
+        <h2><span class="step">7</span> 双语字幕合成
+          <small>（在当前源 SRT 上导入译文 SRT；两侧原始时间区间有<strong>正长度交集</strong>即配对，端点相接不算；相交关系传递成组）</small>
+        </h2>
+        <div class="bi-controls">
+          <label class="file-btn">
+            选择译文 SRT
+            <input type="file" id="bi-file" accept=".srt,.txt">
+          </label>
+          <button id="bi-export" class="btn primary" disabled>🌐 导出双语 SRT</button>
+          <span id="bi-status" class="status"></span>
+        </div>
+        <details class="paste-box bi-paste">
+          <summary>或粘贴译文 SRT 文本</summary>
+          <textarea id="bi-paste-area" rows="6" spellcheck="false"
+            placeholder="1&#10;00:00:01,000 --> 00:00:03,000&#10;Translated text…"></textarea>
+          <button id="bi-parse-paste" class="btn">解析并导入译文</button>
+        </details>
+        <p class="hint">
+          译文时间<strong>倒挂</strong>或任意两条<strong>正长度重叠</strong>（端点相接允许）时拒绝导入；
+          多对一 / 一对多经相交传递合并为同一组，每条字幕只出现一次。
+          每组导出一条：源文、译文各自按原顺序换行拼接后上下排列；时间取该组源字幕<strong>当前校准预览</strong>的最早开始与最晚结束，译文时间只参与配对。
+          存在未配对条目（任一侧）或实时预览有冲突时禁止双语导出；重新导入源 SRT 会清空配对。
+          配对仅用于双语导出，普通导出 / 排版版导出 / <code>.stc</code> 工程均不受影响。
+        </p>
+        <div id="bi-list" class="bi-list">
+          <div class="bi-empty">导入源 SRT 后，在此选择（或粘贴）对应的译文 SRT，自动按时间区间配对分组。</div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer>
+    <span>本工具完全在本地运行：字幕与音频均不会离开你的机器（音频由浏览器 Web Audio API 解码，不上传）。</span>
+  </footer>
+
+  <script src="/static/audit-core.js"></script>
+  <script src="/static/app.js"></script>
+  <script src="/static/audit.js"></script>
+  <script src="/static/typeset.js"></script>
+  <script src="/static/bilingual.js"></script>
+</body>
+</html>
