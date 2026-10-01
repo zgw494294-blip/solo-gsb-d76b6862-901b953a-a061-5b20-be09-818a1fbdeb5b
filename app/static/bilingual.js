@@ -33,6 +33,10 @@
     importSeq: 0, // 每次成功导入译文自增：此前发出的预览视为过期
     previewSeq: 0, // 当前分组所依据的预览批次（与 importSeq 对齐才允许导出）
   };
+  // 译文「重导纪元」：单调递增，每次**成功**导入译文（含覆盖重导）自增；
+  // 仅供第 8 步批量校订判定「预览后译文侧是否成功重导」。
+  // 译文导入失败（时间倒挂 / 重叠被拒）不动此纪元，旧译文与校订保留。
+  let importEpoch = 0;
 
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, (c) =>
@@ -69,6 +73,7 @@
     bi.canExportTimeline = false;
     bi.importSeq = 0;
     bi.previewSeq = 0;
+    importEpoch += 1; // 译文侧整体被清空，同样视为译文重导，失效所有译文侧校订预览
     els.file.value = "";
     els.pasteArea.value = "";
     els.list.innerHTML =
@@ -132,6 +137,7 @@
     bi.translations = parsed.subtitles;
     bi.pairing = pairing;
     bi.importSeq += 1; // 新配对需等下一次实时预览刷新后才允许导出
+    importEpoch += 1; // 成功重导译文：译文侧批量校订纪元变化（失败路径不递增）
     render();
   }
 
@@ -354,10 +360,36 @@
     }
   });
 
+  /* ================= 批量校订整批落地（译文侧，由 revise.js 经接口调用） ================= */
+  // 只改 bi.translations 中被改条目的 text（译文编号 / 时间不动，
+  // 配对只依据原始时间区间，故无需重新配对）；页面立即显示校订后正文，
+  // 普通导出不受影响，双语导出使用校订后译文正文与原有配对 / 拦截。
+  function applyTranslationEdits(editsById) {
+    const changedIds = [];
+    if (!bi.translations) return changedIds;
+    for (const t of bi.translations) {
+      if (editsById.has(t.id) && t.text !== editsById.get(t.id)) {
+        t.text = editsById.get(t.id);
+        changedIds.push(t.id);
+      }
+    }
+    if (changedIds.length) render();
+    return changedIds;
+  }
+
   /* ================= 对外接口 ================= */
   window.BilingualUI = {
     reset,
     setPreview,
+    applyTranslationEdits,
+    // 译文正文读取（第 8 步预览译文侧时使用）
+    getTranslations() {
+      return bi.translations;
+    },
+    // 单调递增的译文重导纪元（仅成功导入译文时变化）
+    importEpoch() {
+      return importEpoch;
+    },
   };
 
   reset();

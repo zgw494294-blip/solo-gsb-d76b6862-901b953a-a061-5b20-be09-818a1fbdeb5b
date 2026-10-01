@@ -11,6 +11,7 @@ const state = {
   fileName: "calibrated.srt",
   rawContent: "", // 当前导入的原始 SRT 文本（含 BOM/CRLF 原样），用于工程摘要
   sourceSha: "", // 当前 SRT 的 SHA-256（由后端返回，展示用）
+  sourceEpoch: 0, // 源文「重导纪元」：每次成功重新导入源 SRT 自增（仅用于批量校订失效判定）
 };
 
 const rowEls = new Map(); // 字幕 id -> 行元素
@@ -95,6 +96,10 @@ function resetWorkspace(content, name) {
     ? name.replace(/\.[^.]+$/, "") + ".calibrated.srt"
     : "calibrated.srt";
   hideProjectPanel();
+  // 成功重新导入源 SRT：清空两侧（源文 / 译文）的批量校订与待确认预览。
+  // 校订仅存内存，旧的正文校订对新 SRT 不再有意义；重导纪元自增使在途预览失效。
+  state.sourceEpoch += 1;
+  if (window.ReviseUI) window.ReviseUI.reset("源 SRT 已重新导入：两侧（源文 / 译文）的批量校订与待确认预览已清空。");
   // 新 SRT 与旧音频不再匹配：重置对白覆盖审计（含已导入的本地音频）
   if (window.AuditUI) window.AuditUI.reset();
   // 排版建议/已接受换行同样只对旧 SRT 有意义：一并重置
@@ -606,6 +611,35 @@ window.Workspace = {
   },
   get fileNameBase() {
     return state.fileName.replace(/\.srt$/i, "");
+  },
+  // 批量校订（第 8 步）读取的重导纪元：源文重导自增；译文重导纪元由 bilingual.js 提供
+  get sourceEpoch() {
+    return state.sourceEpoch;
+  },
+  get importEpoch() {
+    return window.BilingualUI && typeof window.BilingualUI.importEpoch === "function"
+      ? window.BilingualUI.importEpoch()
+      : 0;
+  },
+  // 批量校订整批落地（源文侧）：只改 state.subtitles 中被改条目的 text，
+  // 不动时间 / 编号 / 锚点 / 锁定 / 原始 SRT 摘要（state.rawContent）。
+  // 先重绘字幕表，再清掉被改条目的排版建议 / 已接受换行 / 本轮撤销快照，
+  // 最后刷新实时预览（审计与双语组卡导出时间随之同步）。
+  applySourceEdits(editsById) {
+    const changedIds = [];
+    for (const s of state.subtitles) {
+      if (editsById.has(s.id) && s.text !== editsById.get(s.id)) {
+        s.text = editsById.get(s.id);
+        changedIds.push(s.id);
+      }
+    }
+    if (!changedIds.length) return changedIds;
+    renderTable();
+    // 被改源字幕的排版建议 / 已接受换行 / 排版撤销快照只允许清除，
+    // 且排版撤销不得复活旧正文；在途的迟到排版请求一并作废。
+    if (window.TypesetUI) window.TypesetUI.purgeSourceEdits(changedIds);
+    refreshPreview();
+    return changedIds;
   },
   // 在字幕表正文格打 / 去排版标记
   markTypeset(subId, on) {

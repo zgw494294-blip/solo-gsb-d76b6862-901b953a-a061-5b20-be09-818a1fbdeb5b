@@ -217,6 +217,42 @@
           <div class="bi-empty">导入源 SRT 后，在此选择（或粘贴）对应的译文 SRT，自动按时间区间配对分组。</div>
         </div>
       </section>
+
+      <!-- 8. 批量校订正文 -->
+      <section class="card" id="revise-card">
+        <h2><span class="step">8</span> 批量校订正文
+          <small>（在当前正文按<strong>区分大小写</strong>的字面量从左至右替换不重叠命中；先逐条预览，确认后整批应用；校订仅存内存）</small>
+        </h2>
+        <div class="rv-controls">
+          <label class="rv-param">查找词
+            <input id="rv-find" type="text" spellcheck="false" placeholder="必填，非空；不得含换行">
+          </label>
+          <label class="rv-param">替换文本
+            <input id="rv-replace" type="text" spellcheck="false" placeholder="可留空（=删除命中）；不得含换行">
+          </label>
+          <label class="rv-param">校订侧
+            <select id="rv-side">
+              <option value="source">仅源文</option>
+              <option value="translation">仅译文</option>
+              <option value="both" selected>源文 + 译文</option>
+            </select>
+          </label>
+          <button id="rv-preview" class="btn primary">预览修改</button>
+          <button id="rv-apply" class="btn" disabled>✔ 整批应用</button>
+          <button id="rv-cancel" class="btn secondary" disabled>取消</button>
+          <span id="rv-status" class="status"></span>
+        </div>
+        <p class="hint">
+          逐条列出各条修改前后文本，确认后一次性整批应用。<strong>只改正文</strong>：不改时间、编号、锚点、锁定，
+          也不改原始 SRT 摘要与 <code>.stc</code> 条目指纹；被改源字幕的排版建议 / 已接受换行 / 排版撤销记录会被清除（排版撤销不复活旧正文），其他条目保留。
+          预览后若任一侧成功重导或待改正文变化，整批应用将被拒绝且工作区不变（仅锚点 / 锁定变化仍可应用）。
+          页面及普通、排版版、双语下载都使用校订后正文，原有冲突与未配对拦截保持不变。
+          校订仅存内存：<code>.stc</code> 不保存校订、恢复工程不回退当前正文；成功重导源文清空两侧校订，重导译文仅清空译文校订（导入失败保留原状态）。
+        </p>
+        <div id="rv-list" class="rv-list">
+          <div class="rv-empty">输入查找词（与替换文本）、选择校订侧后点「预览修改」，在此逐条确认修改前后文本，确认后整批应用。</div>
+        </div>
+      </section>
     </div>
   </main>
 
@@ -229,5 +265,6 @@
   <script src="/static/audit.js"></script>
   <script src="/static/typeset.js"></script>
   <script src="/static/bilingual.js"></script>
+  <script src="/static/revise.js"></script>
 </body>
 </html>

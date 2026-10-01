@@ -628,3 +628,81 @@ td.text.typeset { color: #166534; }
 @media (max-width: 960px) {
   .bi-sides { flex-direction: column; }
 }
+
+/* ================= 批量校订正文 ================= */
+#revise-card h2 code { font-family: var(--mono); font-size: 11px; background: #f1f5f9; padding: 0 3px; border-radius: 3px; }
+.rv-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 4px 0 8px;
+}
+.rv-param {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ink);
+}
+.rv-param input, .rv-param select {
+  padding: 5px 8px;
+  font-family: var(--mono);
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.rv-param input { min-width: 180px; }
+#rv-status.bad { color: var(--danger); font-weight: 600; }
+#rv-status.good { color: var(--ok); font-weight: 600; }
+
+.rv-list { display: flex; flex-direction: column; gap: 10px; }
+.rv-empty {
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  padding: 18px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+.rv-side-block {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #fcfdff;
+}
+.rv-side-block.rv-src { border-left: 3px solid #60a5fa; }
+.rv-side-block.rv-trn { border-left: 3px solid #34d399; }
+.rv-side-block h3 {
+  margin: 2px 0 6px;
+  font-size: 13px;
+  color: #334155;
+}
+.rv-side-block.rv-src h3 { color: #1d4ed8; }
+.rv-side-block.rv-trn h3 { color: #047857; }
+.rv-table-wrap { max-height: 320px; overflow: auto; border: 1px solid var(--border); border-radius: 6px; }
+.rv-table-wrap table { font-size: 12.5px; }
+.rv-table-wrap thead th { background: #f8fafc; padding: 5px 8px; }
+.rv-table-wrap tbody td { padding: 5px 8px; }
+.rv-text {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 6px;
+  min-width: 180px;
+}
+td.rv-before .rv-text { color: #7f1d1d; background: var(--danger-bg); }
+td.rv-after .rv-text { color: #166534; background: #f0fdf4; }
+.rv-arrow { color: var(--muted); text-align: center; }
+.rv-count { color: var(--muted); text-align: center; }
+.rv-foot {
+  font-size: 12px;
+  color: var(--muted);
+  border-top: 1px dashed var(--border);
+  padding-top: 8px;
+}

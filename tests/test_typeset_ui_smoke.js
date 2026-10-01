@@ -255,7 +255,87 @@ const assert = require("assert");
   assert.strictEqual(marks.size, 0, "撤销本轮后标记应清空");
   assert.strictEqual(els["#ts-export"].disabled, true);
 
-  // 6) reset（导入新 SRT）
+  // 6) 源正文批量校订清理 + 在途迟到排版请求作废
+  //    6a) 重新接受 #1，模拟校订前的已接受排版状态
+  cards[0].querySelector(".ts-accept").dispatch("click");
+  assert.ok(marks.has(1), "前置：#1 已接受");
+  assert.strictEqual(els["#ts-undo-round"].disabled, false, "前置：本轮有快照可撤销");
+
+  //    6b) 发起一次新的「生成建议」请求，但让它悬而不返回（模拟网络慢）
+  let resolveLate = null;
+  const latePromise = new Promise((resolve) => { resolveLate = resolve; });
+  global.fetch = async (url) => {
+    if (url === "/api/typeset/suggest") return latePromise;
+    throw new Error("未预期的请求：" + url);
+  };
+  els["#ts-generate"].dispatch("click");
+  await new Promise((r) => setTimeout(r, 5));
+
+  //    6c) 校订源文 #1（purgeSourceEdits 会清建议/已接受/撤销快照，并作废在途请求）
+  TypesetUI.purgeSourceEdits([1]);
+  assert.ok(!marks.has(1), "被改源字幕 #1 的已接受换行被清除");
+  assert.strictEqual(els["#ts-undo-round"].disabled, true,
+    "本轮撤销快照对 #1 的记录被清除（撤销不得复活旧正文）");
+
+  //    6d) 在途请求迟到返回：必须被丢弃，绝不能用旧正文建议恢复 #1
+  resolveLate({
+    ok: true,
+    status: 200,
+    async json() {
+      return {
+        columns: 18, max_lines: 2, total: 3,
+        feasible_count: 3, infeasible_count: 0, change_count: 3,
+        results: [
+          { id: 1, feasible: true, columns: 18, max_lines: 2, changed: true,
+            original: "旧正文", text: "LATE-RESPONSE-MARKER 旧正文建议",
+            lines: ["LATE-RESPONSE-MARKER 旧正文建议"], widths: [20],
+            total_penalty: 3, residual_sq: 0, cluster_count: 25,
+            breaks: [{ boundary: 1, kind: "han", kind_label: "汉字之间", penalty: 3, existing: false, left: "旧", right: "正" }],
+            reasons: [] },
+        ],
+      };
+    },
+  });
+  await new Promise((r) => setTimeout(r, 5));
+  assert.ok(!els["#ts-list"].innerHTML.includes("LATE-RESPONSE-MARKER"),
+    "迟到的旧正文排版建议必须被丢弃，不得恢复旧建议");
+  assert.ok(!marks.has(1), "迟到建议不得复活 #1 的已接受状态");
+
+  //    6e) 再次正常生成：新请求序号更新，可正常渲染（不被上一轮作废误伤）
+  global.fetch = async (url, opts) => {
+    JSON.parse(opts.body);
+    if (url === "/api/typeset/suggest") {
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            columns: 18, max_lines: 2, total: 2,
+            feasible_count: 2, infeasible_count: 0, change_count: 0,
+            results: [
+              { id: 2, feasible: true, columns: 18, max_lines: 2, changed: false,
+                original: "校订后的新正文", text: "校订后的新正文",
+                lines: ["校订后的新正文"], widths: [16],
+                total_penalty: 0, residual_sq: 4, cluster_count: 8,
+                breaks: [], reasons: [] },
+              { id: 3, feasible: true, columns: 18, max_lines: 2, changed: false,
+                original: "另一条正文", text: "另一条正文",
+                lines: ["另一条正文"], widths: [10],
+                total_penalty: 0, residual_sq: 64, cluster_count: 5,
+                breaks: [], reasons: [] },
+            ],
+          };
+        },
+      };
+    }
+    throw new Error("未预期的请求：" + url);
+  };
+  els["#ts-generate"].dispatch("click");
+  await new Promise((r) => setTimeout(r, 5));
+  assert.ok(els["#ts-list"].innerHTML.includes("校订后的新正文"), "新一轮建议正常渲染");
+  assert.ok(!els["#ts-list"].innerHTML.includes("LATE-RESPONSE-MARKER"));
+
+  // 7) reset（导入新 SRT）
   TypesetUI.reset();
   assert.strictEqual(els["#ts-accept-all"].disabled, true);
   assert.strictEqual(els["#ts-undo-round"].disabled, true);

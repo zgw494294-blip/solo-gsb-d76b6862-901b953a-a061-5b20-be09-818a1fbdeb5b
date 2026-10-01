@@ -21,6 +21,9 @@
     snapshot: null, // 本轮生成时 accepted 的深拷贝（用于「撤销本轮」）
     canExport: false, // 当前时间轴是否无冲突
   };
+  // 排版建议请求纪元：每次发起新建议请求、重置工作区或源正文被批量校订时自增；
+  // 序号对不上的迟到响应一律丢弃，不得用旧正文的建议覆盖当前列表。
+  let suggestSeq = 0;
 
   const KIND_STYLE = {
     sentence_end: { tag: "句末 0", cls: "k-sent" },
@@ -50,6 +53,7 @@
 
   /* ================= 重置（导入新 SRT 时由 app.js 调用） ================= */
   function reset() {
+    suggestSeq += 1; // 作废此前发出、尚未返回的排版建议请求
     ts.results = null;
     ts.accepted = new Map();
     ts.snapshot = null;
@@ -82,6 +86,7 @@
     ts.columns = columns;
     ts.maxLines = maxLines;
 
+    const seq = ++suggestSeq; // 新一轮建议：此前在途响应一律视为过期
     setStatus("正在计算排版建议…", false);
     let data;
     try {
@@ -92,14 +97,20 @@
       });
       data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        if (seq !== suggestSeq) return; // 迟到的失败响应：静默丢弃
         const msg = typeof data.detail === "string" ? data.detail : "请求失败";
         setStatus("✖ " + escapeHtml(msg), true);
         return;
       }
     } catch (e) {
+      if (seq !== suggestSeq) return; // 迟到的网络错误：静默丢弃
       setStatus("✖ 排版请求失败：" + escapeHtml(e.message), true);
       return;
     }
+
+    // 应用前发出的排版请求迟到（工作区已重置或源正文已被批量校订）：
+    // 只丢弃响应，绝不用旧正文的建议恢复旧列表 / 旧建议。
+    if (seq !== suggestSeq) return;
 
     ts.results = data.results;
     // 新一轮：拍快照（已接受的换行若新建议与其不一致会在列表中标出，可重新接受）
@@ -304,9 +315,31 @@
     }
   });
 
+  /* ================= 源正文被批量校订后的清理（由 app.js 调用） ================= */
+  // 只清除「被改源字幕」的排版建议、已接受换行及本轮排版撤销快照；
+  // 其他条目一律保留。撤销快照同步清除，保证「撤销本轮」绝不能复活旧正文。
+  function purgeSourceEdits(changedIds) {
+    const changed = new Set(changedIds || []);
+    if (!changed.size) return [];
+    suggestSeq += 1; // 在途的迟到建议请求按旧正文算出，必须作废
+    for (const id of changed) {
+      ts.accepted.delete(id);
+      if (ts.snapshot) ts.snapshot.delete(id);
+      W.markTypeset(id, false);
+    }
+    if (ts.results) {
+      ts.results = ts.results.filter((r) => !changed.has(r.id));
+      if (!ts.results.length) ts.results = null;
+    }
+    if (ts.snapshot && !ts.snapshot.size) ts.snapshot = null;
+    render();
+    return [...changed];
+  }
+
   /* ================= 对外接口 ================= */
   window.TypesetUI = {
     reset,
+    purgeSourceEdits,
     setCanExport(ok) {
       ts.canExport = Boolean(ok);
       render();
